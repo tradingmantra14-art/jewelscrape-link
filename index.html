@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>JewelScrape</title>
+<meta name="robots" content="noindex">
+<style>
+:root{
+  --bg:#0f1115; --card:#171a21; --line:#2a2f3a; --fg:#e8eaf0;
+  --dim:#9aa3b2; --gold:#d8b26a; --bad:#ef6a6a; --good:#5fd38a;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme=dark]){
+    --bg:#f5f6f8; --card:#fff; --line:#dcdfe6; --fg:#1a1d24;
+    --dim:#5d6676; --gold:#9a7320;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);display:flex;
+  align-items:center;justify-content:center;padding:24px;
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:28px 24px;max-width:420px;width:100%;text-align:center}
+h1{font-size:22px;margin:0 0 4px;font-weight:650;letter-spacing:-.3px}
+h1 span{color:var(--gold)}
+p{color:var(--dim);margin:10px 0 0;font-size:14px}
+.spin{width:30px;height:30px;margin:20px auto 6px;border-radius:50%;
+  border:3px solid var(--line);border-top-color:var(--gold);
+  animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+a.btn{display:block;margin-top:16px;background:var(--gold);color:#17130a;
+  text-decoration:none;font-weight:650;padding:13px 16px;border-radius:10px}
+.err{color:var(--bad);font-weight:600}
+.small{font-size:12.5px;margin-top:14px}
+code{background:rgba(127,127,127,.15);padding:2px 6px;border-radius:5px;
+  font-size:12px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Jewel<span>Scrape</span></h1>
+
+  <div id="loading">
+    <div class="spin"></div>
+    <p>Finding the service&hellip;</p>
+  </div>
+
+  <div id="failed" class="hide">
+    <p class="err">The service is offline right now.</p>
+    <p>It runs on a computer that needs to be switched on. Try again in a
+       few minutes, or ask whoever gave you this link to start it.</p>
+    <p class="small" id="detail"></p>
+  </div>
+
+  <div id="manual" class="hide">
+    <p>Ready.</p>
+    <a class="btn" id="go" href="#">Open JewelScrape</a>
+    <p class="small">If nothing happens, tap the button above.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var key = qs.get('k') || '';
+
+  // Work out the repo from this page's own address, so nothing here needs
+  // editing: https://USER.github.io/REPO/  ->  USER/REPO
+  var user = (location.hostname.split('.')[0] || '');
+  var repo = (location.pathname.split('/').filter(Boolean)[0] || '');
+  var branch = 'main';
+  var bust = 't=' + Date.now();
+
+  var sources = [];
+  if (user && repo) {
+    sources.push('https://raw.githubusercontent.com/' + user + '/' + repo +
+                 '/' + branch + '/link.json?' + bust);
+  }
+  sources.push('link.json?' + bust);          // served by Pages itself
+
+  function show(id) {
+    ['loading', 'failed', 'manual'].forEach(function (n) {
+      document.getElementById(n).classList.toggle('hide', n !== id);
+    });
+  }
+
+  function fail(why) {
+    document.getElementById('detail').textContent = why || '';
+    show('failed');
+  }
+
+  function arrive(base) {
+    var target = base.replace(/\/+$/, '') + '/' + (key ? '?k=' + encodeURIComponent(key) : '');
+    document.getElementById('go').href = target;
+    show('manual');
+    location.replace(target);
+  }
+
+  function tryNext(i) {
+    if (i >= sources.length) {
+      fail('Could not read where the service is.');
+      return;
+    }
+    fetch(sources[i], {cache: 'no-store'})
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) {
+        if (!d || !d.url) throw new Error('no address recorded');
+        // A very old entry usually means the PC has been off for a while,
+        // but still worth trying before giving up.
+        arrive(d.url);
+      })
+      .catch(function (e) { tryNext(i + 1); });
+  }
+
+  tryNext(0);
+})();
+</script>
+</body>
+</html>
