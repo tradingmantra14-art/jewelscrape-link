@@ -74,12 +74,19 @@ code{background:rgba(127,127,127,.15);padding:2px 6px;border-radius:5px;
   var branch = 'main';
   var bust = 't=' + Date.now();
 
+  // raw.githubusercontent and Pages both sit behind a CDN that can serve a
+  // five-minute-old copy, which would send people to an address that has
+  // already been replaced. The API is never cached, so ask all three and use
+  // whichever reports the newest timestamp.
   var sources = [];
   if (user && repo) {
-    sources.push('https://raw.githubusercontent.com/' + user + '/' + repo +
-                 '/' + branch + '/link.json?' + bust);
+    sources.push({url: 'https://api.github.com/repos/' + user + '/' + repo +
+                       '/contents/link.json?ref=' + branch + '&' + bust,
+                  raw: true});
+    sources.push({url: 'https://raw.githubusercontent.com/' + user + '/' + repo +
+                       '/' + branch + '/link.json?' + bust});
   }
-  sources.push('link.json?' + bust);          // served by Pages itself
+  sources.push({url: 'link.json?' + bust});   // served by Pages itself
 
   function show(id) {
     ['loading', 'failed', 'manual'].forEach(function (n) {
@@ -99,23 +106,32 @@ code{background:rgba(127,127,127,.15);padding:2px 6px;border-radius:5px;
     location.replace(target);
   }
 
-  function tryNext(i) {
-    if (i >= sources.length) {
+  function read(src) {
+    var opts = {cache: 'no-store'};
+    if (src.raw) opts.headers = {'Accept': 'application/vnd.github.raw'};
+    return fetch(src.url, opts)
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        if (!d || !d.url) throw new Error('no address recorded');
+        return {url: d.url, updated: Number(d.updated) || 0};
+      })
+      .catch(function () { return null; });
+  }
+
+  Promise.all(sources.map(read)).then(function (answers) {
+    var best = null;
+    answers.forEach(function (a) {
+      if (a && (!best || a.updated > best.updated)) best = a;
+    });
+    if (!best) {
       fail('Could not read where the service is.');
       return;
     }
-    fetch(sources[i], {cache: 'no-store'})
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function (d) {
-        if (!d || !d.url) throw new Error('no address recorded');
-        // A very old entry usually means the PC has been off for a while,
-        // but still worth trying before giving up.
-        arrive(d.url);
-      })
-      .catch(function (e) { tryNext(i + 1); });
-  }
-
-  tryNext(0);
+    arrive(best.url);
+  });
 })();
 </script>
 </body>
